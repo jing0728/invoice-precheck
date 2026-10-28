@@ -1,0 +1,29 @@
+name: netsuite-invoice-pre-check
+display_name: NetSuite Invoice Pre-Check
+description: >-
+  Invoice-readiness pre-check for NetSuite Sales Orders at XXX. Trigger on
+  "check SO", "检查 SO", "invoice pre-check", "扫描待开票队列", "回填发票号",
+  or batch SO inspection requests. Preferred path is driving the local tool
+  invoice-precheck-tool (http://localhost:3100), not checking each SO by hand
+  in the browser. Requires the reference workbook
+  (invoice-pre-check-reference.xlsx), a debug Chrome on port 9222, and an
+  active NetSuite session in it. NetSuite is read-only EXCEPT one authorized
+  field: switching a Sales Order's FORM from 211 to 219 after a queue scan.
+entrypoint: SKILL.md
+version: 2.0.0
+metadata:
+  project: XXX Warehouse Project
+  # 不再是全程只读：队列扫描会切 SO 的 FORM 字段（211 -> 219，仅此一个字段，
+  # 前后全字段差异审计），并把发票号/金额回填进开票系统。见 SKILL.md。
+  mode: read-mostly
+  netsuite_writes:
+    - customform (211 -> 219), queue scan only, checked SOs only
+  tool:
+    path: invoice-precheck-tool/
+    url: http://localhost:3100/
+    rules_source_of_truth: invoice-precheck-tool/engine.py + tests/
+  references:
+    - references/workbook-schema.md
+    - references/discount-calculation.md
+    - references/report-contract.md
+    - references/billing-app.md

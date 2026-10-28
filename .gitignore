@@ -1,0 +1,30 @@
+# Playwright 持久化配置目录（含 NetSuite 登录 cookie，绝不能进版本库）
+invoice-precheck-tool/.browser-profile/
+
+# 运行时产物
+invoice-precheck-tool/reports/
+__pycache__/
+*.pyc
+
+# 参考工作簿与客户清单含 561 个真实客户主数据。
+# 本地仓库无所谓，但一旦推到 GitHub 就是数据泄露 —— 默认不跟踪。
+# 需要给工作簿做版本的话，另建一个私有仓库或用文件备份。
+*.xlsx
+~$*.xlsx
+# Added by code-review-graph
+.code-review-graph/
+
+# NetSuite TBA 令牌（4 个密钥，绝不能进版本库）
+invoice-precheck-tool/ns_api_credentials.json
+
+# Local environments, credentials and generated caches
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.log
+*.pem
+*.key

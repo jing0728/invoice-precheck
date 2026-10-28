@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Invoice Pre-Check</title>
+<style>
+  :root {
+    --ready:#16a34a; --fail:#dc2626; --review:#d97706; --inc:#64748b; --inv:#0d9488;
+    --ink:#1a2332; --dim:#64748b; --line:#dde4ee; --bg:#eef2f7; --card:#fff;
+    --brand:#1f4e79; --accent:#2563eb;
+  }
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:'Segoe UI',Arial,sans-serif; background:var(--bg); color:var(--ink);
+         font-size:14px; padding:0 0 60px; }
+  .wrap { max-width:1500px; margin:0 auto; padding:0 20px; }
+
+  /* ── 顶栏 ───────────────────────────────────────────── */
+  header { background:var(--brand); color:#fff; padding:14px 0; margin-bottom:16px;
+           box-shadow:0 2px 8px rgba(0,0,0,.12); }
+  header .wrap { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:17px; font-weight:600; }
+  header h1 span { font-weight:400; opacity:.75; font-size:14px; }
+  .headmeta { margin-left:auto; font-size:12px; opacity:.85; display:flex; gap:14px;
+              align-items:center; flex-wrap:wrap; }
+  .headmeta a { color:#bfdbfe; }
+
+  /* ── 通用件 ─────────────────────────────────────────── */
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px;
+           padding:9px 16px; font-size:13px; cursor:pointer; font-family:inherit; }
+  button:hover:not(:disabled) { filter:brightness(1.08); }
+  button:disabled { background:#94a3b8; cursor:not-allowed; }
+  button.ghost { background:#fff; color:var(--ink); border:1px solid var(--line); }
+  button.teal { background:var(--inv); }
+  button.sm { padding:5px 11px; font-size:12px; }
+  input, select, textarea { font-family:inherit; font-size:13px; padding:8px 11px;
+           border-radius:8px; border:1px solid #cbd5e1; background:#fff; color:var(--ink); }
+  input:focus, select:focus, textarea:focus { outline:2px solid var(--accent); outline-offset:1px; }
+  .bar { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .sub { color:var(--dim); font-size:12px; }
+  .mono { font-family:Consolas,'Cascadia Mono',monospace; font-variant-numeric:tabular-nums; }
+  .panel { background:var(--card); border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.07);
+           padding:14px 16px; margin-bottom:14px; }
+
+  /* ── 进度 ───────────────────────────────────────────── */
+  #progress { display:none; }
+  #progress.on { display:block; }
+  .prog-head { display:flex; align-items:center; gap:10px; margin-bottom:9px; flex-wrap:wrap; }
+  .prog-head b { font-size:15px; }
+  .spin { width:15px; height:15px; border:2px solid #bfdbfe; border-top-color:var(--accent);
+          border-radius:50%; animation:sp .8s linear infinite; flex:none; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion:reduce) { .spin { animation-duration:3s; } }
+  .track { height:8px; background:#e2e8f0; border-radius:99px; overflow:hidden; }
+  .fill { height:100%; background:linear-gradient(90deg,var(--accent),#38bdf8);
+          border-radius:99px; transition:width .4s ease; }
+  .fill.indet { width:35%; animation:slide 1.4s ease-in-out infinite; }
+  @keyframes slide { 0%{margin-left:-35%} 100%{margin-left:100%} }
+  .prog-foot { display:flex; justify-content:space-between; gap:12px; margin-top:7px;
+               font-size:12px; color:var(--dim); flex-wrap:wrap; }
+
+  /* ── 提示条 ─────────────────────────────────────────── */
+  .alert { border-radius:9px; padding:11px 15px; margin-bottom:12px; font-size:13px; line-height:1.65; }
+  .alert-bad { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; }
+  .alert-ok  { background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; }
+  .alert-warn{ background:#fffbeb; border:1px solid #fde68a; color:#92400e; }
+  .alert b { display:block; margin-bottom:3px; }
+  .newpill { background:#1e293b; color:#fff; border-radius:99px; padding:9px 18px;
+             cursor:pointer; font-size:13px; display:inline-flex; gap:8px; align-items:center; }
+
+  /* ── tab / 卡片 ─────────────────────────────────────── */
+  .tabs { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+  .tab { padding:6px 15px; border-radius:20px; background:#fff; cursor:pointer;
+         border:1px solid var(--line); font-size:13px; }
+  .tab.active { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+  .cards { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+  .card { background:var(--card); border-radius:10px; padding:11px 16px; min-width:118px;
+          box-shadow:0 1px 3px rgba(0,0,0,.07); cursor:pointer; border:2px solid transparent;
+          transition:border-color .15s, transform .1s; }
+  .card:hover { transform:translateY(-1px); }
+  .card.sel { border-color:var(--accent); }
+  .card.mute { opacity:.5; }
+  .card i { font-style:normal; font-size:12px; color:var(--dim); display:block; }
+  .card b { font-size:23px; display:block; font-variant-numeric:tabular-nums; line-height:1.25; }
+
+  /* ── 表格 ───────────────────────────────────────────── */
+  .tablebox { background:var(--card); border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.07);
+              overflow:auto; max-height:calc(100vh - 200px); }
+  table { width:100%; border-collapse:collapse; }
+  th { background:var(--brand); color:#fff; padding:9px 11px; text-align:left; font-size:12px;
+       cursor:pointer; user-select:none; white-space:nowrap; position:sticky; top:0; z-index:2; }
+  th.plain { cursor:default; }
+  th .arr { opacity:.6; font-size:10px; }
+  td { padding:9px 11px; border-top:1px solid #e6ebf3; font-size:13px; vertical-align:top; }
+  tbody tr:hover { background:#f7fafd; }
+  .tag { padding:2px 10px; border-radius:12px; color:#fff; font-size:11px; font-weight:600;
+         white-space:nowrap; display:inline-block; }
+  .INVOICE-READY{background:var(--ready)} .DO-NOT-INVOICE{background:var(--fail)}
+  .NEEDS-REVIEW{background:var(--review)} .CHECK-INCOMPLETE{background:var(--inc)}
+  .INVOICED{background:var(--inv)}
+  .reason { color:#374151; font-size:12px; max-width:640px; line-height:1.6; }
+  .reason .why { color:#b45309; font-weight:600; }
+  .ovmark { font-size:10px; color:#7c3aed; font-weight:600; margin-top:3px; }
+  .ovnote { background:#f5f3ff; border-left:3px solid #7c3aed; padding:5px 9px;
+            border-radius:4px; margin-bottom:5px; color:#5b21b6; }
+  .ovstale { background:#fffbeb; border-left-color:#d97706; color:#92400e; }
+  details summary { cursor:pointer; color:var(--accent); font-size:12px; margin-top:4px; }
+  pre { background:#f7f9fc; padding:9px; border-radius:6px; font-size:11px; overflow-x:auto;
+        margin-top:5px; line-height:1.55; white-space:pre-wrap; }
+  h3 { font-size:14px; margin:20px 0 8px; color:var(--brand); }
+  .empty { padding:34px; text-align:center; color:var(--dim); }
+
+  /* ── 行内改判 ───────────────────────────────────────── */
+  .ovform { background:#faf5ff; border:1px solid #ddd6fe; border-radius:8px; padding:10px;
+            margin-top:6px; display:flex; flex-direction:column; gap:7px; max-width:430px; }
+  .ovform textarea { resize:vertical; min-height:52px; }
+  .ovform .row { display:flex; gap:7px; align-items:center; flex-wrap:wrap; }
+
+  /* ── toast ──────────────────────────────────────────── */
+  #toast { position:fixed; right:20px; bottom:20px; display:flex; flex-direction:column;
+           gap:8px; z-index:50; }
+  .toast { background:#1e293b; color:#fff; padding:11px 16px; border-radius:9px; font-size:13px;
+           box-shadow:0 6px 18px rgba(0,0,0,.22); max-width:400px; line-height:1.55; }
+  .toast.bad { background:#991b1b; }
+</style>
+</head>
+<body>
+
+<header><div class="wrap">
+  <h1>Invoice Pre-Check <span>— XXX 发票预检</span></h1>
+  <div class="headmeta">
+    <span>队列：Order Workflow · Team 3 · Unbilled</span>
+    <span>每天 15:00 自动扫描</span>
+    <span>改判人：<a href="#" id="revName" onclick="changeReviewer();return false;">未设置</a></span>
+  </div>
+</div></header>
+
+<div class="wrap">
+  <div id="newpillWrap"></div>
+  <div id="progress" class="panel"></div>
+
+  <div class="panel">
+    <div class="bar" style="margin-bottom:10px">
+      <button id="runBtn" onclick="runScan()">▶ 立即扫描队列</button>
+      <input id="soInput" placeholder="或输入 SO 号做只读测试扫描（SO9000004, 1398700 …）"
+             style="flex:1;min-width:280px" onkeydown="if(event.key==='Enter')manualScan()">
+      <button id="manBtn" class="teal" onclick="manualScan()">🔍 测试扫描</button>
+      <span class="sub">测试扫描只读，不回填、不改表单</span>
+    </div>
+    <div class="bar" style="margin-bottom:0">
+      <span class="sub" id="wbLine">加载中…</span>
+      <span style="margin-left:auto"></span>
+      <button class="ghost sm" id="pfBtn" onclick="runPreflight()">环境预检（约 3 分钟）</button>
+    </div>
+  </div>
+
+  <div id="preflight"></div>
+  <div class="tabs" id="dateTabs"></div>
+  <div class="bar">
+    <label class="sub">本日批次
+      <select id="timeSel" onchange="showReport(this.value)" style="margin-left:6px"></select>
+    </label>
+    <input id="q" placeholder="搜索 SO / 账号 / PO" style="width:220px" oninput="renderTable()">
+    <span class="sub" id="filterNote"></span>
+  </div>
+  <div class="cards" id="cards"></div>
+  <div id="tableWrap"></div>
+  <div id="invoicedWrap"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const VERDICT_CN = {
+  'INVOICE-READY':'可直接开票', 'DO-NOT-INVOICE':'禁止开票', 'NEEDS-REVIEW':'需人工审核',
+  'CHECK-INCOMPLETE':'检查未完成', 'INVOICED':'已开票回填'
+};
+const STATUS_CN = {'PASS':'通过','FAIL':'不通过','NEEDS-REVIEW':'需人工','N/A':'不适用'};
+const CHECK_CN = {
+  '0-eligibility':'① 开票资格','1-discount':'② 折扣','2-price-level':'③ 价格等级',
+  '3-unit-price':'④ 单价','4-fulfillment':'⑤ 发货单','5-edi':'⑥ EDI 地址'
+};
+const cn = k => CHECK_CN[k] || k;
+const tag = s => `<span class="tag ${s}">${VERDICT_CN[s] || s}</span>`;
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let reports = [], backfilled = [], overrides = [], curDate = null, curRows = [],
+    sortKey = null, sortAsc = true, curRep = null, curRepFile = '',
+    filter = null, ovOpenFor = null, lastRunning = false, knownNewest = '';
+
+// 命中这些关键词的证据行才是"为什么要人工/为什么禁止开票"的那一条
+// （中文为现行提示；英文保留，兼容改版前生成的历史报告）
+const WHY_RE = /需人工|人工确认|人工核对|人工判断|无法解析|不一致|不符|未达|缺失|空白|禁止开票|已开票|差异|疑似|出错|不可用|不存在|不活跃|超过上限|超限|找不到|review|confirm|unparsed|differs|mismatch|not in allowed|non-Shipped|ALREADY|absent|blank|missing|must|human/i;
+
+const fmtDate = f => f.slice(0,4)+'-'+f.slice(4,6)+'-'+f.slice(6,8);
+const fmtTime = f => f.slice(9,11)+':'+f.slice(11,13)+':'+f.slice(13,15);
+
+function toast(msg, bad) {
+  const d = document.createElement('div');
+  d.className = 'toast' + (bad ? ' bad' : '');
+  d.textContent = msg;
+  $('toast').appendChild(d);
+  setTimeout(() => d.remove(), bad ? 9000 : 4500);
+}
+
+// 取列表型接口：后端版本落后（接口还不存在）或出错时返回空数组，
+// 不让某一个接口把整个页面的渲染带崩
+async function getList(url) {
+  try {
+    const j = await (await fetch(url)).json();
+    return Array.isArray(j) ? j : [];
+  } catch (e) { return []; }
+}
+
+/* ── 改判人 ─────────────────────────────────────────── */
+function reviewer() { return (localStorage.getItem('precheck_reviewer') || '').trim(); }
+function changeReviewer() {
+  const n = (prompt('改判人姓名（会记录在改判日志里）：', reviewer()) || '').trim();
+  if (n) { localStorage.setItem('precheck_reviewer', n); showReviewer(); }
+}
+function showReviewer() { $('revName').textContent = reviewer() || '未设置'; }
+const overrideOf = so => overrides.filter(o => o.so_number === so).slice(-1)[0] || null;
+
+/* ── 扫描进度 ───────────────────────────────────────── */
+// 进度放在服务端，所以刷新页面也能重新接上正在跑的那一轮扫描
+function elapsed(iso) {
+  if (!iso) return '';
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
+  return s < 60 ? `${s} 秒` : `${Math.floor(s/60)} 分 ${String(s%60).padStart(2,'0')} 秒`;
+}
+
+async function pollProgress() {
+  let p = null;
+  try { p = await (await fetch('/api/progress')).json(); } catch (e) {}
+  if (p && p.running) {
+    lastRunning = true;
+    const pct = p.total ? Math.round(p.done / p.total * 100) : 0;
+    $('progress').className = 'panel on';
+    $('progress').innerHTML = `
+      <div class="prog-head"><div class="spin"></div>
+        <b>${esc(p.phase || '扫描中')}</b>
+        <span class="sub">${p.mode === 'manual' ? '手动测试扫描（只读）' : '队列扫描'}</span>
+        ${p.total ? `<span class="mono" style="margin-left:auto;font-size:13px">${p.done} / ${p.total}</span>` : ''}
+      </div>
+      <div class="track"><div class="fill ${p.total ? '' : 'indet'}"
+        style="${p.total ? `width:${pct}%` : ''}"></div></div>
+      <div class="prog-foot">
+        <span>${p.current_so ? '当前：<b class="mono">' + esc(p.current_so) + '</b>' : '准备中…'}</span>
+        <span>已用 ${elapsed(p.started_at)}${p.total && p.done ?
+          ' ｜ 约剩 ' + eta(p.started_at, p.done, p.total) : ''}</span>
+      </div>`;
+    setTimeout(pollProgress, 2000);
+    return;
+  }
+  $('progress').className = 'panel';
+  $('progress').innerHTML = '';   // 清掉上一轮的残影，别让隐藏的旧内容留在 DOM 里
+  if (lastRunning) {           // 刚刚跑完 —— 自动把新结果拉进来
+    lastRunning = false;
+    toast('扫描完成，已载入最新结果');
+    await refreshAll(true);
+  }
+  setTimeout(pollProgress, 8000);
+}
+
+function eta(startIso, done, total) {
+  const secs = (Date.now() - new Date(startIso)) / 1000;
+  const left = Math.round(secs / Math.max(done,1) * (total - done));
+  return left < 60 ? `${left} 秒` : `${Math.round(left/60)} 分钟`;
+}
+
+/* ── 启动 ───────────────────────────────────────────── */
+async function init() {
+  showReviewer();
+  try {
+    const st = await (await fetch('/api/status')).json();
+    $('wbLine').innerHTML = st.workbook.ok
+      ? `✅ 工作簿 ACTIVE · ${st.workbook.customers} 客户 · 更新于 ${st.workbook.meta.Customers.updated_at} ｜ 取数：${esc(st.netsuite_source)}`
+      : `⛔ 工作簿不可用：${esc(st.workbook.error)}`;
+  } catch (e) { $('wbLine').textContent = '状态接口读取失败：' + e; }
+  await refreshAll();
+  knownNewest = reports[0] || '';
+  pollProgress();
+  setInterval(checkForNewReports, 60000);
+}
+
+// 空闲时留意有没有新扫描（比如 15:00 那轮）。只提示，不打断你正在看的批次。
+async function checkForNewReports() {
+  const list = (await (await fetch('/api/reports')).json()).reports || [];
+  if (list[0] && list[0] !== knownNewest && list[0] !== curRepFile) {
+    $('newpillWrap').innerHTML = `<div class="alert" style="padding:0;background:none;border:0">
+      <span class="newpill" onclick="jumpToNewest()">🔔 有新的扫描结果（${fmtTime(list[0])}）— 点击查看</span></div>`;
+  }
+}
+async function jumpToNewest() {
+  $('newpillWrap').innerHTML = '';
+  await refreshAll(true);
+}
+
+async function runPreflight() {
+  $('pfBtn').disabled = true; $('pfBtn').textContent = '检查中…（约 3 分钟）';
+  $('preflight').innerHTML = '<div class="alert alert-ok">正在连接调试 Chrome、NetSuite、开票系统…</div>';
+  try {
+    const p = await (await fetch('/api/preflight')).json();
+    $('preflight').innerHTML = p.problems.length
+      ? `<div class="alert alert-bad"><b>⚠ 环境预检未通过 — 15:00 的自动扫描会受影响</b>${
+          p.problems.map(x => '• ' + esc(x)).join('<br>')}</div>`
+      : `<div class="alert alert-ok">✅ 环境就绪：调试 Chrome 已连接 ｜ NetSuite 会话有效 ｜ 开票系统已登录（${esc(p.billing_login)}）</div>`;
+  } catch (e) {
+    $('preflight').innerHTML = '<div class="alert alert-bad">环境检查失败：' + esc(e) + '</div>';
+  } finally {
+    $('pfBtn').disabled = false; $('pfBtn').textContent = '重新预检（约 3 分钟）';
+  }
+}
+
+/* ── 日期 / 批次 ────────────────────────────────────── */
+function dates() {
+  const s = new Set(reports.map(fmtDate));
+  backfilled.forEach(b => s.add(b.date));
+  return [...s].sort().reverse();
+}
+function renderTabs() {
+  const ds = dates();
+  if (!curDate || !ds.includes(curDate)) curDate = ds[0] || null;
+  $('dateTabs').innerHTML = ds.map(d =>
+    `<div class="tab ${d === curDate ? 'active' : ''}" onclick="pickDate('${d}')">${d}</div>`).join('');
+  pickDate(curDate, true);
+}
+function pickDate(d, keep) {
+  curDate = d;
+  if (!keep) [...document.querySelectorAll('.tab')].forEach(t =>
+    t.classList.toggle('active', t.textContent === d));
+  const files = reports.filter(f => fmtDate(f) === d).sort().reverse();
+  $('timeSel').innerHTML = files.map(f => `<option value="${f}">${fmtTime(f)}</option>`).join('')
+    || '<option value="">（本日无扫描）</option>';
+  if (files.length) showReport(files[0]); else { curRep = null; render(); }
+}
+async function showReport(file) {
+  curRepFile = file || '';
+  curRep = file ? await (await fetch('/api/report/file/' + file)).json() : null;
+  ovOpenFor = null;
+  render();
+}
+
+/* ── 原因列 ─────────────────────────────────────────── */
+function reasonOf(r) {
+  if (r.reason) return `<span class="why">${esc(r.reason)}</span>`;
+  if (!r.checks) return '';
+  const parts = [];
+  if (r.account_mismatch) parts.push(`<span class="why">账号核对：</span>${esc(r.account_mismatch)}`);
+  const bad = Object.entries(r.checks).filter(([, v]) => v.status === 'FAIL' || v.status === 'NEEDS-REVIEW');
+  if (!bad.length && !parts.length) return '<span class="sub">六项检查全部通过</span>';
+  parts.push(...bad.map(([k, v]) => {
+    const why = v.evidence.filter(e => WHY_RE.test(e));
+    return `<span class="why">${cn(k)}：</span>${esc((why.length ? why : v.evidence.slice(-1)).join('；'))}`;
+  }));
+  return parts.join('<br>');
+}
+
+/* ── 渲染 ───────────────────────────────────────────── */
+function render() {
+  const invToday = backfilled.filter(b => b.date === curDate);
+  const invSOs = new Map(invToday.map(b => [b.so_number, b]));
+  curRows = (curRep && curRep.results || []).map(r => {
+    const inv = invSOs.get(r.so_number);
+    let ov = overrideOf(r.so_number), stale = null;
+    // 改判只对"它所针对的那一批扫描"有效。只要还没开票回填，
+    // 每次重新扫描都重新判定，结论以最新扫描为准，旧改判降级为提示。
+    if (ov && ov.report_file !== curRepFile) { stale = ov; ov = null; }
+    // 已回填 > 有效的人工改判 > 机器结论
+    return {so: r.so_number, acct: r.account_number || '', po: r.po_number || '',
+            overall: inv ? 'INVOICED' : (ov ? ov.overall : r.overall),
+            machine: r.overall, ov: ov, stale: stale,
+            reason: inv ? `已回填 ${inv.invoice_number} / $${inv.invoice_amount}（${inv.time} by ${inv.by}）` : null,
+            raw: r};
+  });
+  renderCards();
+  renderTable();
+  renderInvoiced(invToday);
+}
+
+function countOf(v) { return curRows.filter(r => r.overall === v).length; }
+function renderCards() {
+  if (!curRep) { $('cards').innerHTML = ''; return; }
+  const defs = [
+    ['', '全部', curRows.length, 'var(--ink)'],
+    ['INVOICE-READY', '可直接开票', countOf('INVOICE-READY'), 'var(--ready)'],
+    ['NEEDS-REVIEW', '需人工审核', countOf('NEEDS-REVIEW'), 'var(--review)'],
+    ['DO-NOT-INVOICE', '禁止开票', countOf('DO-NOT-INVOICE'), 'var(--fail)'],
+    ['CHECK-INCOMPLETE', '检查未完成', countOf('CHECK-INCOMPLETE'), 'var(--inc)'],
+    ['INVOICED', '已回填', countOf('INVOICED'), 'var(--inv)']
+  ].filter(d => d[0] === '' || d[2] > 0);
+  $('cards').innerHTML = defs.map(([v, label, n, color]) =>
+    `<div class="card ${filter === (v || null) ? 'sel' : ''} ${n === 0 ? 'mute' : ''}"
+          onclick="setFilter('${v}')" title="点击只看这一类">
+       <i>${label}</i><b style="color:${color}">${n}</b></div>`).join('');
+}
+function setFilter(v) {
+  filter = (filter === (v || null)) ? null : (v || null);
+  renderCards(); renderTable();
+}
+
+const ORDER = {'DO-NOT-INVOICE':0,'NEEDS-REVIEW':1,'CHECK-INCOMPLETE':2,'INVOICE-READY':3,'INVOICED':4};
+function sortBy(k) { sortAsc = sortKey === k ? !sortAsc : true; sortKey = k; renderTable(); }
+
+function scanNote() {
+  const ab = curRep.auto_backfill || [];
+  const abOk = ab.filter(x => x.status === 'BILLED').length;
+  const pf = curRep.preflight;
+  const fs = curRep.form_switch || [];
+  const fsBad = fs.filter(x => x.status !== 'CHANGED' && x.status !== 'SKIP');
+  return [
+    curRep.mode === 'manual' ? '🔍 手动测试扫描（只读，不回填）' : '',
+    (pf && pf.problems && pf.problems.length) ? `⚠ 扫描时环境异常：${pf.problems.join('；')}` : '',
+    (curRep.skipped_invoiced || []).length ? `已跳过 ${curRep.skipped_invoiced.length} 张已回填的 SO` : '',
+    ab.length ? `自动回填 ${abOk}/${ab.length} 成功` : '',
+    curRep.auto_backfill_error ? `⚠ 自动回填出错：${curRep.auto_backfill_error}` : '',
+    fs.length ? `FORM 改为 with Close：${fs.filter(x => x.status === 'CHANGED').length} 改动 / ${
+      fs.filter(x => x.status === 'SKIP').length} 已是目标${
+      fsBad.length ? ` ｜ ⚠ ${fsBad.length} 项需人工核对：${fsBad.map(b => b.so_number + ' ' + b.detail).join('；')}` : ''}` : '',
+    (curRep.form_switch_skipped_unchecked || []).length
+      ? `未写表单（检查未完成）：${curRep.form_switch_skipped_unchecked.length} 张` : '',
+    curRep.form_switch_error ? `⚠ FORM 切换出错：${curRep.form_switch_error}` : ''
+  ].filter(Boolean).join(' ｜ ');
+}
+
+function renderTable() {
+  if (!curRep) {
+    $('tableWrap').innerHTML = '<div class="panel empty">本日没有扫描记录</div>';
+    $('filterNote').textContent = ''; return;
+  }
+  const q = ($('q').value || '').trim().toUpperCase();
+  // 已回填的 SO 只在下方「本日已回填」区块列出，不占待处理清单
+  let rows = curRows.filter(r => r.overall !== 'INVOICED');
+  if (filter) rows = rows.filter(r => r.overall === filter);
+  if (q) rows = rows.filter(r => (r.so + ' ' + r.acct + ' ' + r.po).toUpperCase().includes(q));
+  if (sortKey) rows.sort((a, b) => {
+    const va = sortKey === 'overall' ? ORDER[a.overall] : a[sortKey];
+    const vb = sortKey === 'overall' ? ORDER[b.overall] : b[sortKey];
+    return (va < vb ? -1 : va > vb ? 1 : 0) * (sortAsc ? 1 : -1);
+  });
+  const hidden = curRows.filter(r => r.overall !== 'INVOICED').length - rows.length;
+  $('filterNote').textContent = (filter || q)
+    ? `已筛选：显示 ${rows.length} 条${hidden > 0 ? `，隐藏 ${hidden} 条` : ''}` : '';
+
+  const arr = k => sortKey === k ? `<span class="arr">${sortAsc ? '▲' : '▼'}</span>`
+                                 : '<span class="arr">↕</span>';
+  const note = scanNote();
+  $('tableWrap').innerHTML = `
+    <div class="sub" style="margin-bottom:7px">扫描时间：${curRep.started_at}${note ? ' ｜ ' + note : ''}</div>
+    <div class="tablebox"><table><thead><tr>
+      <th onclick="sortBy('so')">SO ${arr('so')}</th>
+      <th onclick="sortBy('acct')">账号 ${arr('acct')}</th>
+      <th onclick="sortBy('po')">PO ${arr('po')}</th>
+      <th onclick="sortBy('overall')">结论 ${arr('overall')}</th>
+      <th class="plain">操作</th>
+      <th class="plain">原因 / 详情</th>
+    </tr></thead><tbody>` +
+    (rows.length ? rows.map(rowHtml).join('')
+      : '<tr><td colspan="6" class="empty">没有符合条件的记录</td></tr>') +
+    '</tbody></table></div>';
+}
+
+function rowHtml(r) {
+  return `<tr>
+    <td class="mono">${r.so}</td><td>${esc(r.acct)}</td><td class="mono">${esc(r.po)}</td>
+    <td>${tag(r.overall)}${r.ov ? '<div class="ovmark">人工改判</div>' : ''}</td>
+    <td>${r.overall === 'INVOICED'
+      ? '<span class="sub">已回填，不可改</span>'
+      : `<button class="ghost sm" onclick="toggleOv('${r.so}')">${
+          ovOpenFor === r.so ? '收起' : '改判'}</button>`}
+      ${ovOpenFor === r.so ? ovFormHtml(r) : ''}</td>
+    <td class="reason">
+      ${r.ov ? `<div class="ovnote">人工改判：${VERDICT_CN[r.ov.overall]}
+        （机器结论 ${VERDICT_CN[r.ov.was] || r.ov.was || VERDICT_CN[r.machine]}）｜
+        ${esc(r.ov.by)} ${r.ov.at}｜原因：${esc(r.ov.note)}</div>` : ''}
+      ${r.stale ? `<div class="ovnote ovstale">⚠ ${esc(r.stale.by)} 在 ${r.stale.at} 曾把本单改判为
+        「${VERDICT_CN[r.stale.overall]}」（当时机器结论 ${VERDICT_CN[r.stale.was] || r.stale.was}，原因：${esc(r.stale.note)}）。
+        该改判只对当时那批扫描有效，本次扫描已重新判定为「${VERDICT_CN[r.machine]}」${
+          r.stale.overall === r.machine ? '（结论一致）' : '，如仍需放行请重新改判'}</div>` : ''}
+      ${reasonOf(r.reason ? r : r.raw)}
+      ${r.raw.checks ? `<details><summary>逐项检查明细</summary><pre>${esc(
+        Object.entries(r.raw.checks).map(([k, v]) =>
+          `${cn(k)}：${STATUS_CN[v.status] || v.status}\n  ${v.evidence.join('\n  ')}`).join('\n'))
+      }</pre></details>` : ''}
+    </td></tr>`;
+}
+
+/* ── 行内改判（取代原来的两个 prompt） ──────────────── */
+function toggleOv(so) { ovOpenFor = ovOpenFor === so ? null : so; renderTable(); }
+function ovFormHtml(r) {
+  const opts = ['INVOICE-READY','NEEDS-REVIEW','DO-NOT-INVOICE'].filter(v => v !== r.overall);
+  return `<div class="ovform" onclick="event.stopPropagation()">
+    <div class="row"><span class="sub">改判为</span>
+      <select id="ovv_${r.so}">${opts.map(v => `<option value="${v}">${VERDICT_CN[v]}</option>`).join('')}</select>
+    </div>
+    <textarea id="ovn_${r.so}" placeholder="改判原因（必填，会记入改判日志）"></textarea>
+    <div class="row">
+      <button class="sm" onclick="submitOv('${r.so}','${r.machine}')">确认改判</button>
+      <button class="ghost sm" onclick="toggleOv('${r.so}')">取消</button>
+      <span class="sub">署名：${esc(reviewer() || '未设置')}</span>
+    </div></div>`;
+}
+async function submitOv(so, was) {
+  let by = reviewer();
+  if (!by) { changeReviewer(); by = reviewer(); if (!by) { toast('未填写姓名，已取消', true); return; } }
+  const verdict = $('ovv_' + so).value;
+  const note = ($('ovn_' + so).value || '').trim();
+  if (!note) { toast('请填写改判原因', true); return; }
+  try {
+    const r = await fetch('/api/override', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({so_number: so, overall: verdict, note, by, was, report_file: curRepFile})});
+    const j = await r.json();
+    if (j.error) { toast('改判失败：' + j.error, true); return; }
+    overrides.push(j); ovOpenFor = null; render();
+    toast(`${so} 已改判为「${VERDICT_CN[verdict]}」`);
+  } catch (e) { toast('改判失败：' + e, true); }
+}
+
+function renderInvoiced(invToday) {
+  $('invoicedWrap').innerHTML = invToday.length ? `<h3>本日已回填（INVOICED）· ${invToday.length} 张</h3>
+    <div class="tablebox" style="max-height:none"><table><thead><tr>
+      <th class="plain">时间</th><th class="plain">SO</th><th class="plain">账号</th>
+      <th class="plain">发票号</th><th class="plain">金额</th><th class="plain">操作人</th></tr></thead><tbody>` +
+    invToday.map(b => `<tr><td class="mono">${b.time}</td><td class="mono">${b.so_number}</td>
+      <td>${esc(b.account)}</td><td class="mono">${b.invoice_number}</td>
+      <td class="mono">$${Number(b.invoice_amount).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+      <td>${esc(b.by)}</td></tr>`).join('') + '</tbody></table></div>' : '';
+}
+
+async function refreshAll(jumpNewest) {
+  reports = ((await (await fetch('/api/reports')).json()).reports) || [];
+  backfilled = await getList('/api/backfilled');
+  overrides = await getList('/api/overrides');
+  if (jumpNewest && reports[0]) { curDate = fmtDate(reports[0]); knownNewest = reports[0]; }
+  $('newpillWrap').innerHTML = '';
+  renderTabs();
+}
+
+/* ── 扫描 ───────────────────────────────────────────── */
+async function runScan() {
+  if (!confirm('立即扫描待开票队列？\n\n这一轮会写入：NetSuite 表单（211 → 219）、开票系统发票号回填。')) return;
+  $('runBtn').disabled = true; $('runBtn').textContent = '扫描中…';
+  pollProgress();
+  try {
+    const r = await fetch('/api/run', {method:'POST'});
+    if (r.status === 409) { toast((await r.json()).error || '已有扫描在进行中', true); return; }
+    if (!r.ok) { toast('扫描失败：' + ((await r.json()).error || r.status), true); return; }
+    await refreshAll(true);
+  } catch (e) { toast('扫描请求失败：' + e, true); }
+  finally { $('runBtn').disabled = false; $('runBtn').textContent = '▶ 立即扫描队列'; }
+}
+
+async function manualScan() {
+  const v = $('soInput').value.trim();
+  if (!v) { toast('请先输入 SO 号', true); return; }
+  $('manBtn').disabled = true; $('manBtn').textContent = '扫描中…';
+  pollProgress();
+  try {
+    const r = await fetch('/api/scan', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({so_numbers: v})});
+    const j = await r.json();
+    if (j.error) { toast(j.error, true); return; }
+    await refreshAll(true);
+  } catch (e) { toast('扫描请求失败：' + e, true); }
+  finally { $('manBtn').disabled = false; $('manBtn').textContent = '🔍 测试扫描'; }
+}
+
+init();
+</script>
+</body>
+</html>
